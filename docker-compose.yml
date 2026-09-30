@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_URL=${REDIS_URL:?Set REDIS_URL to your Redis endpoint}
+      - REDIS_TLS=${REDIS_TLS:-false}
+      - DATABASE_URL=${DATABASE_URL:?Set DATABASE_URL to your PostgreSQL endpoint}
+    restart: always
+
+  redis:
+    profiles: [local-redis]
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    profiles: [local-postgres]
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-deadlockiq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-deadlockiq}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deadlockiq"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  prometheus:
+    profiles: [observability]
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  grafana:
+    profiles: [observability]
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-}
+    depends_on:
+      - prometheus
